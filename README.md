@@ -1,4 +1,3 @@
-```markdown
 # managed-browser
 
 A simple wrapper to integrate language-model agents into your existing Playwright (Python) scripts via the popular `browser-use` library, with built-in Playwright tracing support.
@@ -267,4 +266,3 @@ Please fork the repo and submit a pull request, or open an issue for discussion.
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-```
