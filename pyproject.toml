@@ -1,0 +1,10 @@
+[project]
+name = "managed-browser"
+version = "0.1.0"
+description = "Allows seamless interplay between agentic browser-use and Playwright internals"
+requires-python = ">=3.10"
+dependencies = [
+    "browser-use>=0.1.48",
+    "fake-useragent>=2.2.0",
+    "langchain>=0.3.22",
+]
