@@ -8,36 +8,19 @@ A simple wrapper to integrate language-model agents into your existing Playwrigh
 
 ## Objective
 
-Agents are still unreliable and far from production-ready—especially web agents, given the enormous diversity and challenges of navigating real-world sites. In the near term, scraping and navigation tasks will remain a hybrid of:
-
-- Manual browser automation  
-- Custom JavaScript snippets  
-- Narrower, rule-driven agents  
-
+Agents are still unreliable and far from production-ready—especially web agents, given the enormous diversity and challenges of navigating real-world sites. 
 This package lets you keep your existing Playwright flows and seamlessly “drop in” agent tasks where you need them, without wrestling with a clunky API. It also exposes Playwright’s powerful tracing features around each agent run so you can debug and audit exactly what happened in the browser.
-
-## Features
-
-- **Seamless agent integration**  
-  Wrap any `browser-use`-style arguments into an LLM-driven agent without leaving your Playwright context.  
-- **Playwright tracing**  
-  Automatically record and export Playwright trace files around agent tasks for offline debugging and playback.  
-- **Minimal API surface**  
-  One `BrowserManager` → managed context → agent creation → `agent.run()`.
 
 ## Installation
 
 Requires Python 3.11+ and a [PEP 517](https://www.python.org/dev/peps/pep-0517/)-compatible build backend.
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/abaveja313/managed-browser.git
-cd managed-browser
-
-# 4. Install the package using uv/pip
-pip install .
+# UV
+uv add managed-browser
+# Pip
+pip install managed-browser
 ```
-
 
 ## Usage
 
@@ -123,5 +106,5 @@ Contributions, issues, and feature requests are welcome!
 Please fork the repo and submit a pull request, or open an issue for discussion.
 
 ## License
-
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.  
+

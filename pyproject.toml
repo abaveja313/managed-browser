@@ -1,10 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "managed-browser"
 version = "0.1.0"
 description = "Allows seamless interplay between agentic browser-use and Playwright internals"
+readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "browser-use>=0.1.48",
-    "fake-useragent>=2.2.0",
-    "langchain>=0.3.22",
+license = { file = "LICENSE" }
+authors = [
+  { name = "Amrit Baveja", email = "abaveja313@gmail.com" },
 ]
+dependencies = [
+  "browser-use>=0.1.48",
+  "fake-useragent>=2.2.0",
+  "langchain>=0.3.22",
+]
+keywords = ["playwright", "browser", "agent", "automation", "LLM"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.10",
+  "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/abaveja313/managed-browser"
+Repository = "https://github.com/abaveja313/managed-browser"
