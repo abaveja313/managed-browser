@@ -2,10 +2,6 @@
 
 A simple wrapper to integrate language-model agents into your existing Playwright (Python) scripts via the popular `browser-use` library, with built-in Playwright tracing support.
 
-## Supports
-
-- Python 3.11+
-
 ## Objective
 
 Agents are still unreliable and far from production-ready—especially web agents, given the enormous diversity and challenges of navigating real-world sites. 
@@ -39,7 +35,6 @@ async def main():
     # Your LLM of choice
     llm = ChatOpenAI(model='gpt-4o')
 
-    # Create a managed context (with tracing enabled under the hood)
     async with bm.managed_context() as session:
         page = await session.browser_context.new_page()
 
@@ -57,47 +52,22 @@ async def main():
                 "Return your answer wrapped in <result>...</result>."
             )
         )
-        result = await agent.run()
+        # page now contains where the agent ended up
+        result, page = await agent.run() 
         print(result)
-
-    # After exit, Playwright trace(s) for the agent run will be saved in ./playwright_traces/
 
 if __name__ == '__main__':
     asyncio.run(main())
 ```
 
-## API Reference
-
-### `BrowserManager`
-
-```python
-BrowserManager(
-    browser_config: BrowserConfig,
-    *,
-    trace_dir: Optional[str] = "./playwright_traces"
-)
-```
-- **browser_config**: your `browser-use`/Playwright settings  
-- **trace_dir**: where to dump Playwright trace ZIPs
-
-#### `.managed_context()`
-
-An async context manager yielding a `ManagedSession`:
-
-- `session.browser_context` → Playwright `BrowserContext`  
-- `session.make_agent(llm: BaseChatModel, task: str, **kwargs)` → ready-to-run agent
-
-#### `ManagedSession.make_agent(...)`
-
-Wraps `browser-use` arguments into an LLM agent. Returns an object with a `.run()` coroutine.
-
 ### Tracing
 
-By default, each `agent.run()` invocation is wrapped in a Playwright trace. Trace files (ZIP) will appear under `trace_dir` with timestamps for easy playback:
+If enabled, managed sessions can trace all events and capture screenshots for both manual and agentic Playwright operations.
+To view the trace, use the following command:
 
 ```bash
 # Playwright CLI
-npx playwright show-trace ./playwright_traces/<timestamp>.zip
+npx playwright show-trace /path/to/your/tracing/output.zip
 ```
 
 ## Contributing

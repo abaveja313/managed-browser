@@ -23,11 +23,7 @@ logger = logging.getLogger(__name__)
 
 class AgentWithControlTransfer(Agent):
     """
-    Agent subclass that returns both the agent's execution result and the final
-    Playwright Page instance the agent ended up on.
-
-    Inherits all behavior from browser_use.agent.service.Agent but overrides
-    `run()` to bundle the original output with the agent's current_page.
+    Agent subclass for handling control transfer.
     """
 
     async def run(self, *args: Any, **kwargs: Any) -> Tuple[Any, Page]:  # type: ignore[override]
