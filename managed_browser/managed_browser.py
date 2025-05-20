@@ -192,7 +192,12 @@ class BrowserManager:
             await playwright_ctx.pages[0].close()
 
         if use_tracing:
-            await playwright_ctx.tracing.start()
+            # TODO do we need to expose this?
+            await playwright_ctx.tracing.start(
+                screenshots=True,
+                snapshots=True,
+                sources=False
+            )
 
         try:
             yield ManagedSession(
