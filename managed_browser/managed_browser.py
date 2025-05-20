@@ -9,7 +9,7 @@ from browser_use.browser.browser import BrowserConfig, Browser
 from browser_use.browser.context import BrowserContextConfig, BrowserContext
 from fake_useragent import UserAgent
 from langchain_core.language_models import BaseChatModel
-from playwright.async_api import BrowserContext as PlaywrightBrowserContext
+from playwright.async_api import BrowserContext as PlaywrightBrowserContext, Page
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class ManagedSession:
     _factory_context: BrowserContext
     _browser: Browser
 
-    def make_agent(self, llm: BaseChatModel, **kwargs) -> Agent:
+    def make_agent(self, start_page: Page, llm: BaseChatModel, **kwargs) -> Agent:
         """
         Creates an Agent instance for browser automation using the provided LLM.
 
@@ -40,15 +40,19 @@ class ManagedSession:
         for automated interactions.
 
         Args:
+            start_page: the page to start on
             llm: The language model to use for agent cognition
             **kwargs: Additional keyword arguments to pass to the Agent constructor
 
         Returns:
             Agent: A configured agent that can interact with the browser
         """
+        self._factory_context.human_current_page = start_page
+        self._factory_context.agent_current_page = start_page
 
         agent_kws = {"browser": self._browser,
                      "browser_context": self._factory_context, "llm": llm, **kwargs}
+        print(agent_kws)
         return Agent(**agent_kws)
 
 
@@ -139,8 +143,13 @@ class BrowserManager:
         # The browser-use "BrowserContext" wraps the underlying context
         ctx_wrapper: BrowserContext = await self._browser.new_context(config=context_config)
 
+        # Will open up about:blank as a starting point, which causes problems
         await ctx_wrapper.get_session()
         ctx: PlaywrightBrowserContext = cast(PlaywrightBrowserContext, ctx_wrapper.session.context)
+
+        if len(ctx.pages) > 1 and ctx.pages[0].url == 'about:blank':
+            await ctx.pages[0].close()
+
         try:
             if use_tracing:
                 await ctx.tracing.start()

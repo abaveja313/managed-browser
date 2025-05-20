@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "managed-browser"
-version = "0.1.0"
+version = "0.1.3"
 description = "Allows seamless interplay between agentic browser-use and Playwright internals"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,7 +13,7 @@ authors = [
   { name = "Amrit Baveja", email = "abaveja313@gmail.com" },
 ]
 dependencies = [
-  "browser-use>=0.1.48",
+  "browser-use==0.1.48",
   "fake-useragent>=2.2.0",
   "langchain>=0.3.22",
 ]
