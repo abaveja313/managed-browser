@@ -1,80 +1,97 @@
-# managed-browser
+## managed-browser
 
-A simple wrapper to integrate language-model agents into your existing Playwright (Python) scripts via the popular `browser-use` library, with built-in Playwright tracing support.
+A minimal wrapper to seamlessly integrate [browser-use](https://github.com/browser-use/browser-use/tree/main/browser_use) agents into your existing Playwright (Python) workflows.
 
-## Objective
+---
 
-Agents are still unreliable and far from production-ready—especially web agents, given the enormous diversity and challenges of navigating real-world sites. 
-This package lets you keep your existing Playwright flows and seamlessly “drop in” agent tasks where you need them, without wrestling with a clunky API. It also exposes Playwright’s powerful tracing features around each agent run so you can debug and audit exactly what happened in the browser.
+## Motivation
+Browser agents powered by LLMs can think creatively—click links by intent, extract arbitrary data, and navigate dynamic UIs—but they remain **inherently non-deterministic**. They may:
+
+- Misinterpret a button label or page layout  
+- Click the wrong element when the UI changes  
+- Drift off-task if given an open-ended prompt  
+
+Meanwhile, your Playwright scripts are **rock-solid and repeatable**, but rigid for anything beyond well-defined interactions.
+
+**managed-browser** bridges the gap:
+
+1. **Drop-in Agent Segments**  
+   Invoke an LLM-driven agent exactly where you need it, without refactoring your existing Playwright logic.
+
+2. **Seamless Control Transfer**  
+   Hand off to the agent, then regain the _exact same_ `Page`—with cookies, localStorage, DOM state, and session intact—so you can resume deterministic flows.
+
+3. **Best of Both Worlds**  
+   Let Playwright handle the mechanical, repeatable steps; delegate the fuzzy, creative extraction to your agent, then pick up where you left off.
+
+4. **Full Visibility & Audit**  
+   Wrap every agent run in a Playwright trace ZIP for step-by-step replay, screenshots, network logs, and DOM snapshots.
+
+---
 
 ## Installation
 
-Requires Python 3.11+ and a [PEP 517](https://www.python.org/dev/peps/pep-0517/)-compatible build backend.
+Requires **Python 3.11+**.
 
 ```bash
-# UV
-uv add managed-browser
-# Pip
 pip install managed-browser
 ```
 
-## Usage
+---
+
+## Quick Example
 
 ```python
 import asyncio
+from pathlib import Path
+
 from browser_use import BrowserConfig
 from langchain_openai import ChatOpenAI
 from managed_browser import BrowserManager
 
 async def main():
-    # Initialize the manager with your Playwright config
-    bm = BrowserManager(
-        browser_config=BrowserConfig(headless=False)
-    )
+    bm = BrowserManager(browser_config=BrowserConfig(headless=False))
+    llm = ChatOpenAI(model="gpt-4o")
 
-    # Your LLM of choice
-    llm = ChatOpenAI(model='gpt-4o')
-
-    async with bm.managed_context() as session:
+    trace_file = Path("./traces/agent-run.zip")
+    async with bm.managed_context(use_tracing=True, tracing_output_path=trace_file) as session:
         page = await session.browser_context.new_page()
+        await page.goto("https://example.com")
 
-        # -- Your deterministic Playwright steps --
-        await page.goto("https://github.com", wait_until="domcontentloaded")
-        await page.wait_for_timeout(1_000)
-        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        await page.wait_for_timeout(1_000)
-
-        # -- Drop in an agent task --
         agent = session.make_agent(
+            start_page=page,
             llm=llm,
-            task=(
-                "Extract the visible link text in the website's footer. "
-                "Return your answer wrapped in <result>...</result>."
-            )
+            task="List all <h1>–<h3> headings on this page."
         )
-        # page now contains where the agent ended up
-        result, page = await agent.run() 
-        print(result)
+        output, final_page = await agent.run()
 
-if __name__ == '__main__':
+        print("Agent output:", output)
+        print("Ended at URL:", final_page.url)
+
+    await bm.shutdown()
+
+if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Tracing
+---
 
-If enabled, managed sessions can trace all events and capture screenshots for both manual and agentic Playwright operations.
-To view the trace, use the following command:
+## Core API
 
-```bash
-# Playwright CLI
-npx playwright show-trace /path/to/your/tracing/output.zip
-```
+### `BrowserManager(browser_config, *, autostart=True)`
 
-## Contributing
+- **`.managed_context(use_tracing=False, tracing_output_path=None, randomize_user_agent=True, context_kwargs=None)`**  
+  Async context manager yielding a `ManagedSession`.
+- **`.shutdown()`**  
+  Gracefully close the browser.
 
-Contributions, issues, and feature requests are welcome!  
-Please fork the repo and submit a pull request, or open an issue for discussion.
+### `ManagedSession`
+
+- **`.browser_context`** → Playwright `BrowserContext`  
+- **`.make_agent(start_page: Page, llm: BaseChatModel, **agent_kwargs)`**  
+  Returns an `AgentWithControlTransfer` whose `.run()` yields `(output, final_page)`.
+
+---
 
 ## License
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.  
-
+MIT © Amrit Baveja
