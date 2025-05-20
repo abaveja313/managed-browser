@@ -1,4 +1,4 @@
-## managed-browser
+# Managed Browser
 
 A minimal wrapper to seamlessly integrate [browser-use](https://github.com/browser-use/browser-use/tree/main/browser_use) agents into your existing Playwright (Python) workflows.
 
