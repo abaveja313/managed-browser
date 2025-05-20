@@ -43,35 +43,35 @@ pip install managed-browser
 
 ```python
 import asyncio
-from pathlib import Path
-
 from browser_use import BrowserConfig
 from langchain_openai import ChatOpenAI
 from managed_browser import BrowserManager
 
 async def main():
-    bm = BrowserManager(browser_config=BrowserConfig(headless=False))
+    bm = BrowserManager(browser_config=BrowserConfig(headless=True))
     llm = ChatOpenAI(model="gpt-4o")
 
-    trace_file = Path("./traces/agent-run.zip")
-    async with bm.managed_context(use_tracing=True, tracing_output_path=trace_file) as session:
+    async with bm.managed_context(use_tracing=True, tracing_output_path=...) as session:
         page = await session.browser_context.new_page()
-        await page.goto("https://example.com")
+        await page.goto("https://example.com/product/42")
 
+        # 1) Agentic handoff: extract product info into JSON
         agent = session.make_agent(
             start_page=page,
             llm=llm,
-            task="List all <h1>–<h3> headings on this page."
+            task="Return JSON: {\"title\": <product title>, \"price\": <price as number>}."
         )
-        output, final_page = await agent.run()
+        product_info, page = await agent.run()
+        print("Extracted:", product_info)
 
-        print("Agent output:", output)
-        print("Ended at URL:", final_page.url)
+        # 2) Hand control back to Playwright for a follow-up action
+        await page.click("button#add-to-cart")
+        await page.wait_for_selector(".cart-count")
+        print("Added to cart, cart count:", await page.inner_text(".cart-count"))
 
     await bm.shutdown()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
 ```
 
 ---
