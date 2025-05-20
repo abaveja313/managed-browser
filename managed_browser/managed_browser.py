@@ -2,70 +2,109 @@ import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import AsyncGenerator, Optional, cast
+from typing import Any, AsyncGenerator, Mapping, Optional, Tuple, cast
 
-from browser_use.agent.service import Agent
-from browser_use.browser.browser import BrowserConfig, Browser
-from browser_use.browser.context import BrowserContextConfig, BrowserContext
 from fake_useragent import UserAgent
 from langchain_core.language_models import BaseChatModel
 from playwright.async_api import BrowserContext as PlaywrightBrowserContext, Page
 
+from browser_use.agent.service import Agent
+from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.browser.context import BrowserContext, BrowserContextConfig
+
+__all__ = [
+    "BrowserManager",
+    "ManagedSession",
+    "AgentWithControlTransfer",
+]
+
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+class AgentWithControlTransfer(Agent):
+    """
+    Agent subclass that returns both the agent's execution result and the final
+    Playwright Page instance the agent ended up on.
+
+    Inherits all behavior from browser_use.agent.service.Agent but overrides
+    `run()` to bundle the original output with the agent's current_page.
+    """
+
+    async def run(self, *args: Any, **kwargs: Any) -> Tuple[Any, Page]:  # type: ignore[override]
+        """
+        Execute the agent's task and capture the final page context.
+
+        Args:
+            *args: Positional arguments forwarded to the base Agent.run().
+            **kwargs: Keyword arguments forwarded to the base Agent.run().
+
+        Returns:
+            A tuple of (base_agent_output, final_page).
+
+        Raises:
+            Exception: Propagates any exception raised by the base Agent.run().
+        """
+        # Perform the original run logic
+        base_output = await super().run(*args, **kwargs)
+        # Grab the Playwright Page the agent is currently on
+        final_page = self.browser_context.agent_current_page  # type: ignore[attr-defined]
+        return base_output, final_page
+
+
+@dataclass(frozen=True)
 class ManagedSession:
     """
-    A managed browser session containing the Playwright browser context and related components.
-
-    This class encapsulates a browser session with its associated context and provides
-    a convenient interface for creating agents that can interact with the browser.
+    Encapsulates a Playwright browser context plus factory metadata
+    for creating browser-use Agents.
 
     Attributes:
-        browser_context: The Playwright browser context used for web interactions
-        _factory_context: The BrowserContext that created this session
-        _cdp_url: Optional Chrome DevTools Protocol URL for debugging
+        browser_context: The PlaywrightBrowserContext for page interactions.
+        _factory_context: The internal BrowserContext wrapper instance.
+        _browser: The shared Browser instance for this session.
     """
     browser_context: PlaywrightBrowserContext
     _factory_context: BrowserContext
     _browser: Browser
 
-    def make_agent(self, start_page: Page, llm: BaseChatModel, **kwargs) -> Agent:
+    def make_agent(
+            self,
+            start_page: Page,
+            llm: BaseChatModel,
+            **kwargs: Any,
+    ) -> AgentWithControlTransfer:
         """
-        Creates an Agent instance for browser automation using the provided LLM.
+        Instantiate an AgentWithControlTransfer bound to this session.
 
-        This method instantiates a new Browser object with the current CDP URL
-        and creates an Agent that can use both the browser and the language model
-        for automated interactions.
+        This sets both the human-facing and agent-facing starting pages,
+        then constructs the agent with the shared Browser and LLM.
 
         Args:
-            start_page: the page to start on
-            llm: The language model to use for agent cognition
-            **kwargs: Additional keyword arguments to pass to the Agent constructor
+            start_page: The initial Playwright Page for the agent.
+            llm: An LLM instance for agent reasoning.
+            **kwargs: Additional keyword args forwarded to the Agent constructor.
 
         Returns:
-            Agent: A configured agent that can interact with the browser
+            AgentWithControlTransfer: Ready-to-run agent instance.
         """
+        # Ensure the session points to the intended start_page
         self._factory_context.human_current_page = start_page
         self._factory_context.agent_current_page = start_page
 
-        agent_kws = {"browser": self._browser,
-                     "browser_context": self._factory_context, "llm": llm, **kwargs}
-        print(agent_kws)
-        return Agent(**agent_kws)
+        agent_args = {
+            "browser": self._browser,
+            "browser_context": self._factory_context,
+            "llm": llm,
+            **kwargs,
+        }
+        return AgentWithControlTransfer(**agent_args)
 
 
 class BrowserManager:
     """
-    Manages browser instances and their lifecycle for browser automation.
+    Factory for creating and managing Browser and BrowserContext instances.
 
-    This class handles the creation, configuration, and cleanup of browser instances
-    and provides utilities for creating managed browser contexts. It supports Chrome
-    DevTools Protocol (CDP) for remote debugging and browser control.
-
-    The manager ensures that browser resources are properly allocated and can be
-    cleanly released when no longer needed.
+    Handles browser startup/shutdown and provides an async context manager
+    to yield ManagedSession objects for scoped automation.
     """
 
     def __init__(
@@ -75,102 +114,118 @@ class BrowserManager:
             autostart: bool = True,
     ) -> None:
         """
-        Initialize a BrowserManager with the specified configuration.
+        Initialize the BrowserManager.
 
         Args:
-            browser_config: Configuration for browser initialization
-            autostart: If True, automatically starts the browser on initialization
+            browser_config: Settings for launching the browser.
+            autostart: If True, immediately starts the Browser.
 
         Raises:
-            IOError: If the specified CDP port is not available and bypass_port_check is False
+            RuntimeError: If browser startup fails.
         """
-        self.browser_config = browser_config
-        self._browser = None
+        self._browser_config = browser_config
+        self._browser: Optional[Browser] = None
 
         if autostart:
             self.start()
 
-    def start(self):
+    def start(self) -> None:
         """
-        Start the browser instance.
+        Launch the Browser with the stored configuration.
 
-        Creates a new Browser instance using the configured browser settings
-        and makes it available for creating contexts and sessions.
+        Raises:
+            RuntimeError: If the browser fails to start.
         """
-        self._browser = Browser(config=self.browser_config)
+        try:
+            self._browser = Browser(config=self._browser_config)
+            logger.info("Browser started successfully.")
+        except Exception as exc:
+            logger.error("Failed to start browser: %s", exc)
+            raise RuntimeError("Could not start browser") from exc
 
     @asynccontextmanager
     async def managed_context(
             self,
             *,
-            context_kwargs: Optional[dict] = None,
+            context_kwargs: Optional[Mapping[str, Any]] = None,
             use_tracing: bool = False,
             tracing_output_path: Optional[Path] = None,
             randomize_user_agent: bool = True,
     ) -> AsyncGenerator[ManagedSession, None]:
         """
-        Create and manage a browser context as an async context manager.
+        Async context manager that yields a ManagedSession.
 
-        This method provides a convenient way to create a browser context with
-        specific configurations and ensure it's properly cleaned up when done.
-        It supports tracing for debugging and can randomize the user agent.
+        It creates a new BrowserContext, optionally records a trace,
+        and ensures cleanup on exit.
 
         Args:
-            context_kwargs: Optional additional keyword arguments for context creation
-            use_tracing: If True, enables Playwright tracing for debugging
-            tracing_output_path: Path where tracing data will be saved if tracing is enabled
-            randomize_user_agent: If True, uses a random user agent string
+            context_kwargs: Overrides for BrowserContextConfig fields.
+            use_tracing: Enable Playwright tracing if True.
+            tracing_output_path: File path to save trace (required if use_tracing).
+            randomize_user_agent: If True, injects a random UA string.
 
         Yields:
-            ManagedSession: A session object containing the browser context
+            ManagedSession: Encapsulated session for agent usage.
 
         Raises:
-            AssertionError: If tracing is enabled without specifying an output path
+            AssertionError: If use_tracing is True without a path.
+            RuntimeError: If the browser is not started.
         """
-        assert use_tracing == bool(tracing_output_path), "You must specify an output path for tracing"
-        if randomize_user_agent:
-            ua = UserAgent().random
-            logger.debug(f"Using User-Agent: {ua}")
-            kwargs = {"user_agent": ua}
-        else:
-            kwargs = {}
-
-        context_config = BrowserContextConfig(
-            **kwargs,
-            **(context_kwargs or {}),
+        # validate preconditions
+        assert not (use_tracing and tracing_output_path is None), (
+            "tracing_output_path must be set when use_tracing is True"
         )
+        if self._browser is None:
+            raise RuntimeError("BrowserManager.start() must be called before managed_context")
 
-        # The browser-use "BrowserContext" wraps the underlying context
-        ctx_wrapper: BrowserContext = await self._browser.new_context(config=context_config)
+        ua_override: Mapping[str, Any] = {}
+        if randomize_user_agent:
+            ua_override = {"user_agent": UserAgent().random}
+            logger.debug("Randomized UA: %s", ua_override["user_agent"])
 
-        # Will open up about:blank as a starting point, which causes problems
+        config = BrowserContextConfig(**ua_override, **(context_kwargs or {}))
+        ctx_wrapper: BrowserContext = await self._browser.new_context(config=config)
+
+        # prime the session (closes default about:blank)
         await ctx_wrapper.get_session()
-        ctx: PlaywrightBrowserContext = cast(PlaywrightBrowserContext, ctx_wrapper.session.context)
+        playwright_ctx = cast(
+            PlaywrightBrowserContext,
+            ctx_wrapper.session.context,
+        )
+        if playwright_ctx.pages and playwright_ctx.pages[0].url == "about:blank":
+            await playwright_ctx.pages[0].close()
 
-        if len(ctx.pages) > 1 and ctx.pages[0].url == 'about:blank':
-            await ctx.pages[0].close()
+        if use_tracing:
+            await playwright_ctx.tracing.start()
 
         try:
-            if use_tracing:
-                await ctx.tracing.start()
             yield ManagedSession(
-                browser_context=cast(PlaywrightBrowserContext, ctx_wrapper.session.context),
+                browser_context=playwright_ctx,
                 _factory_context=ctx_wrapper,
                 _browser=self._browser,
             )
         finally:
+            # tracing stop
             if use_tracing:
-                logger.info(f"Producing trace at {tracing_output_path!r}")
-                await ctx.tracing.stop(path=tracing_output_path)
+                logger.info("Stopping trace to %s", tracing_output_path)
+                await playwright_ctx.tracing.stop(path=tracing_output_path)
 
-            logger.info("Closing BrowserContext…")
+            # cleanup
+            logger.info("Closing browser context")
             await ctx_wrapper.close()
 
     async def shutdown(self) -> None:
         """
-        Tear down Playwright and browser resources.
+        Gracefully close the Browser and release all resources.
 
-        This method should be called when the browser manager is no longer needed
-        to ensure all browser resources are properly released and connections closed.
+        Raises:
+            RuntimeError: If shutdown fails or browser was never started.
         """
-        await self._browser.close()
+        if not self._browser:
+            raise RuntimeError("Browser was not started or already shut down.")
+        try:
+            await self._browser.close()
+            logger.info("Browser shut down successfully.")
+        except Exception as exc:
+            logger.error("Error during browser shutdown: %s", exc)
+            raise
